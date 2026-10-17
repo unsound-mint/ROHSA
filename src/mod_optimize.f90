@@ -135,7 +135,7 @@ contains
     real(xp), dimension(:,:,:), allocatable :: deriv
     real(xp), dimension(:), allocatable :: model
     real(xp) :: gauss
-    real(xp) :: ee, rr
+    real(xp) :: ee, rr, fr, gb
 
     allocate(deriv(3*n_gauss, dim_y, dim_x))
     allocate(residual(dim_v, dim_y, dim_x))
@@ -194,14 +194,19 @@ contains
        call convolution_2D_mirror(conv_mu, conv_conv_mu, dim_y, dim_x, kernel, 3)
        call convolution_2D_mirror(conv_sig, conv_conv_sig, dim_y, dim_x, kernel, 3)
        
+       ! Regularisation terms of this Gaussian are summed in fr and gb and
+       ! added to f and g once, so the loop can run in parallel with the
+       ! same result on one thread.
+       fr = 0._xp
+       gb = 0._xp
        do l=1, dim_x
           do j=1, dim_y
              !Regularization
-             f = f + (0.5_xp * lambda_amp * conv_amp(j,l)**2)
-             f = f + (0.5_xp * lambda_mu * conv_mu(j,l)**2)
-             f = f + (0.5_xp * lambda_sig * conv_sig(j,l)**2) + (0.5_xp * lambda_var_sig * (image_sig(j,l) - b_params(i))**2._xp)
+             fr = fr + (0.5_xp * lambda_amp * conv_amp(j,l)**2)
+             fr = fr + (0.5_xp * lambda_mu * conv_mu(j,l)**2)
+             fr = fr + (0.5_xp * lambda_sig * conv_sig(j,l)**2) + (0.5_xp * lambda_var_sig * (image_sig(j,l) - b_params(i))**2._xp)
              
-             g((n_beta-n_gauss)+i) = g((n_beta-n_gauss)+i) - (lambda_var_sig * (image_sig(j,l) - b_params(i)))        
+             gb = gb - (lambda_var_sig * (image_sig(j,l) - b_params(i)))        
              
              ! The Gaussian (ee) and the weighted residual (rr) are computed
              ! once per channel and shared by the three derivatives.
@@ -224,6 +229,8 @@ contains
           end do
           !
        end do
+       f = f + fr
+       g((n_beta-n_gauss)+i) = g((n_beta-n_gauss)+i) + gb
     end do        
     
     call ravel_3D(deriv, g, 3*n_gauss, dim_y, dim_x)
