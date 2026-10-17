@@ -148,7 +148,11 @@ contains
 
     ! params and residual are overwritten below, and ravel_3D overwrites g
     ! except its last n_gauss entries, so only those and deriv are zeroed.
-    deriv = 0._xp
+    !$omp parallel do schedule(static)
+    do l=1, dim_x
+       deriv(:,:,l) = 0._xp
+    end do
+    !$omp end parallel do
     f = 0._xp
     model = 0._xp
     gauss = 0._xp
@@ -164,6 +168,8 @@ contains
     ! Compute the objective function and the gradient
     ! Same model and objective as myresidual and myfunc_spec, written into
     ! residual directly instead of a temporary allocated per spectrum.
+    ! Spectra are independent: OpenMP over sky columns.
+    !$omp parallel do private(i, k, l, model) reduction(+:f) schedule(static)
     do j=1, dim_x
        do i=1, dim_y
           model = 0._xp
@@ -178,6 +184,7 @@ contains
           end if
        end do
     end do
+    !$omp end parallel do
 
     ! Compute the objective function and the gradient
     do i=1, n_gauss
@@ -199,6 +206,7 @@ contains
        ! same result on one thread.
        fr = 0._xp
        gb = 0._xp
+       !$omp parallel do private(j, k, ee, rr) reduction(+:fr, gb) schedule(static)
        do l=1, dim_x
           do j=1, dim_y
              !Regularization
@@ -229,6 +237,7 @@ contains
           end do
           !
        end do
+       !$omp end parallel do
        f = f + fr
        g((n_beta-n_gauss)+i) = g((n_beta-n_gauss)+i) + gb
     end do        
